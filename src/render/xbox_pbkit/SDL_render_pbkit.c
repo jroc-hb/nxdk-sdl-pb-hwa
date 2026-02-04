@@ -550,7 +550,8 @@ XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
         fmt = xtex->surf_format;
     }
 
-    zpitch = xdata->fb_depth_pitch;
+    // Depth buffer is shared and fixed at back buffer dimensions
+    zpitch = pb_back_buffer_width() * 4;
 
     p = pb_begin();
     p = pb_push1(p, NV097_SET_CONTEXT_DMA_COLOR, PB_DMA_CHANNEL_A);
@@ -1046,7 +1047,6 @@ XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
     /* TODO: figure out how to get current format in case it's not the default */
     data->fb_color_pitch = pb_back_buffer_pitch();
     data->fb_color_fmt = NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8;
-    data->fb_depth_pitch = data->fb_width * 4;
     data->fb_depth_fmt = NV097_SET_SURFACE_FORMAT_ZETA_Z24S8;
 
     if (flags & SDL_RENDERER_PRESENTVSYNC) {
