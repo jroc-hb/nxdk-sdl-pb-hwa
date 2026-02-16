@@ -533,7 +533,7 @@ XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
         dma = PB_DMA_CHANNEL_DEFAULT;
         addr = 0;
         cpitch = xdata->fb_color_pitch;
-        zpitch = xdata->fb_depth_pitch;  /* FIX: Use stored fb_depth_pitch */
+        zpitch = xdata->fb_depth_pitch;
         width = xdata->fb_width;
         height = xdata->fb_height;
         /* this assumes the user didn't call pb_set_color_format for some reason */
@@ -546,7 +546,7 @@ XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
         dma = PB_DMA_CHANNEL_A;
         addr = xtex->addr;
         cpitch = xtex->pitch;
-        zpitch = xdata->fb_depth_pitch;  /* FIX: Use stored fb_depth_pitch */
+        zpitch = xdata->fb_depth_pitch;
         width = xtex->width;
         height = xtex->height;
         fmt = xtex->surf_format;
@@ -647,6 +647,9 @@ static int
 XBOX_PB_QueueCopy(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture *texture,
              const SDL_Rect * srcrect, const SDL_FRect * dstrect)
 {
+    XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
+    float minx, miny, maxx, maxy;
+    float minu, maxu, minv, maxv;
     float *verts = (float *) SDL_AllocateRenderVertices(renderer, 16 * sizeof (float), 0, &cmd->data.draw.first);
 
     if (!verts) {
@@ -655,52 +658,61 @@ XBOX_PB_QueueCopy(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture *t
 
     cmd->data.draw.count = 4;
 
-    /* 0 */
-    *(verts++) = dstrect->x;
-    *(verts++) = dstrect->y;
-    *(verts++) = srcrect->x / (float) texture->w;
-    *(verts++) = srcrect->y / (float) texture->h;
+    minx = dstrect->x;
+    miny = dstrect->y;
+    maxx = dstrect->x + dstrect->w;
+    maxy = dstrect->y + dstrect->h;
 
-    /* 1 */
-    *(verts++) = dstrect->x;
-    *(verts++) = dstrect->y + dstrect->h;
-    *(verts++) = srcrect->x / (float) texture->w;
-    *(verts++) = (srcrect->y + srcrect->h) / (float) texture->h;
+    minu = (float) srcrect->x;
+    maxu = (float) (srcrect->x + srcrect->w);
+    minv = (float) srcrect->y;
+    maxv = (float) (srcrect->y + srcrect->h);
 
-    /* 2 */
-    *(verts++) = dstrect->x + dstrect->w;
-    *(verts++) = dstrect->y + dstrect->h;
-    *(verts++) = (srcrect->x + srcrect->w) / (float) texture->w;
-    *(verts++) = (srcrect->y + srcrect->h) / (float) texture->h;
+    /* texcoords first, position last */
 
-    /* 3 */
-    *(verts++) = dstrect->x + dstrect->w;
-    *(verts++) = dstrect->y;
-    *(verts++) = (srcrect->x + srcrect->w) / (float) texture->w;
-    *(verts++) = srcrect->y / (float) texture->h;
+    *(verts++) = minu;
+    *(verts++) = minv;
+    *(verts++) = minx;
+    *(verts++) = miny;
+
+    *(verts++) = minu;
+    *(verts++) = maxv;
+    *(verts++) = minx;
+    *(verts++) = maxy;
+
+    *(verts++) = maxu;
+    *(verts++) = maxv;
+    *(verts++) = maxx;
+    *(verts++) = maxy;
+
+    *(verts++) = maxu;
+    *(verts++) = minv;
+    *(verts++) = maxx;
+    *(verts++) = miny;
 
     return 0;
 }
 
 static int
 XBOX_PB_QueueCopyEx(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture *texture,
-                 const SDL_Rect * srcrect, const SDL_FRect * dstrect,
-                 const double angle, const SDL_FPoint * center, const SDL_RendererFlip flip)
+               const SDL_Rect * srcrect, const SDL_FRect * dstrect,
+               const double angle, const SDL_FPoint *center, const SDL_RendererFlip flip)
 {
+    XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
     float *verts = (float *) SDL_AllocateRenderVertices(renderer, 16 * sizeof (float), 0, &cmd->data.draw.first);
-    const float x = dstrect->x;
-    const float y = dstrect->y;
-    const float w = dstrect->w;
-    const float h = dstrect->h;
-    const float cx = x + center->x;
-    const float cy = y + center->y;
-    const float s = SDL_sinf(angle * (SDL_PI_F / 180.0f));
-    const float c = SDL_cosf(angle * (SDL_PI_F / 180.0f));
-    float minx, maxx, miny, maxy;
-    const float su = srcrect->x / (float) texture->w;
-    const float sv = srcrect->y / (float) texture->h;
-    const float eu = (srcrect->x + srcrect->w) / (float) texture->w;
-    const float ev = (srcrect->y + srcrect->h) / (float) texture->h;
+    const float centerx = center->x;
+    const float centery = center->y;
+    const float x = dstrect->x + centerx;
+    const float y = dstrect->y + centery;
+    const float width = dstrect->w - centerx;
+    const float height = dstrect->h - centery;
+    float s, c;
+
+    float t;
+    float u0 = srcrect->x;
+    float v0 = srcrect->y;
+    float u1 = srcrect->x + srcrect->w;
+    float v1 = srcrect->y + srcrect->h;
 
     if (!verts) {
         return -1;
@@ -708,85 +720,112 @@ XBOX_PB_QueueCopyEx(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture 
 
     cmd->data.draw.count = 4;
 
-    minx = -center->x;
-    maxx = w - center->x;
-    miny = -center->y;
-    maxy = h - center->y;
+    const float anglerad = angle * M_PI / 180.f;
+    s = sinf(anglerad);
+    c = cosf(anglerad);
+
+    const float cw = c * width;
+    const float sw = s * width;
+    const float ch = c * height;
+    const float sh = s * height;
+
+    if (flip & SDL_FLIP_VERTICAL) {
+        t = v0;
+        v0 = v1;
+        v1 = t;
+    }
 
     if (flip & SDL_FLIP_HORIZONTAL) {
-        float tmp = minx;
-        minx = maxx;
-        maxx = tmp;
-    }
-    if (flip & SDL_FLIP_VERTICAL) {
-        float tmp = miny;
-        miny = maxy;
-        maxy = tmp;
+        t = u0;
+        u0 = u1;
+        u1 = t;
     }
 
-    /* 0 */
-    *(verts++) = (cx + (minx * c - miny * s));
-    *(verts++) = (cy + (minx * s + miny * c));
-    *(verts++) = su;
-    *(verts++) = sv;
+    /* texcoords first, positions second */
 
-    /* 1 */
-    *(verts++) = (cx + (minx * c - maxy * s));
-    *(verts++) = (cy + (minx * s + maxy * c));
-    *(verts++) = su;
-    *(verts++) = ev;
+    *(verts++) = u0;
+    *(verts++) = v0;
+    *(verts++) = x - cw + sh;
+    *(verts++) = y - sw - ch;
 
-    /* 2 */
-    *(verts++) = (cx + (maxx * c - maxy * s));
-    *(verts++) = (cy + (maxx * s + maxy * c));
-    *(verts++) = eu;
-    *(verts++) = ev;
+    *(verts++) = u0;
+    *(verts++) = v1;
+    *(verts++) = x - cw - sh;
+    *(verts++) = y - sw + ch;
 
-    /* 3 */
-    *(verts++) = (cx + (maxx * c - miny * s));
-    *(verts++) = (cy + (maxx * s + miny * c));
-    *(verts++) = eu;
-    *(verts++) = sv;
+    *(verts++) = u1;
+    *(verts++) = v1;
+    *(verts++) = x + cw - sh;
+    *(verts++) = y + sw + ch;
+
+    *(verts++) = u1;
+    *(verts++) = v0;
+    *(verts++) = x + cw + sh;
+    *(verts++) = y + sw - ch;
 
     return 0;
 }
 
-static void
-DrawObjectsFlat(const Uint32 prim, const float *verts, size_t count, const float *color)
-{
-    size_t i;
+static inline void
+DrawObjectsFlat(const Uint32 type, const float *verts, const size_t count, const float *cur_color) {
     Uint32 *p = pb_begin();
+    p = pb_push1(p, NV097_SET_BEGIN_END, type);
+    pb_end(p);
 
-    p = pb_push1(p, NV097_SET_BEGIN_END, prim);
-
-    for (i = 0; i < count; i++) {
-        p = pb_push_inline_array(p, NV2A_VERTEX_ATTR_DIFFUSE, color, 4);
-        p = pb_push_inline_array(p, NV097_INLINE_ARRAY, verts, 2);
-        verts += 2;
+    for (Uint32 i = 0; i < count; ++i) {
+        p = pb_begin();
+            /* color; same for every vertex */
+            pb_push(p++, NV097_SET_VERTEX_DATA4F_M
+                + NV2A_VERTEX_ATTR_DIFFUSE * 4 * sizeof (float), 4);
+            *(float*)(p++) = cur_color[0];
+            *(float*)(p++) = cur_color[1];
+            *(float*)(p++) = cur_color[2];
+            *(float*)(p++) = cur_color[3];
+            /* position */
+            pb_push(p++, NV097_SET_VERTEX4F, 4);
+            *(float*)(p++) = *(verts++);
+            *(float*)(p++) = *(verts++);
+            *(float*)(p++) = 0.f;
+            *(float*)(p++) = 1.f;
+        pb_end(p);
     }
 
+    p = pb_begin();
     p = pb_push1(p, NV097_SET_BEGIN_END, NV097_SET_BEGIN_END_OP_END);
-
     pb_end(p);
 }
 
-static void
-DrawObjectsTextured(const Uint32 prim, const float *verts, size_t count, const float *color)
-{
-    size_t i;
+static inline void
+DrawObjectsTextured(const Uint32 type, const float *verts, const size_t count, const float *cur_color) {
     Uint32 *p = pb_begin();
+    p = pb_push1(p, NV097_SET_BEGIN_END, type);
+    pb_end(p);
 
-    p = pb_push1(p, NV097_SET_BEGIN_END, prim);
-
-    for (i = 0; i < count; i++) {
-        p = pb_push_inline_array(p, NV2A_VERTEX_ATTR_DIFFUSE, color, 4);
-        p = pb_push_inline_array(p, NV2A_VERTEX_ATTR_TEXTURE0, verts + 2, 2);
-        p = pb_push_inline_array(p, NV097_INLINE_ARRAY, verts, 2);
-        verts += 4;
+    for (Uint32 i = 0; i < count; ++i) {
+        p = pb_begin();
+            /* texcoords */
+            pb_push(p++, NV097_SET_VERTEX_DATA2F_M
+                + NV2A_VERTEX_ATTR_TEXTURE0 * 2 * sizeof(float), 2);
+            *(float*)(p++) = *(verts++);
+            *(float*)(p++) = *(verts++);
+            /* color; same for every vertex */
+            pb_push(p++, NV097_SET_VERTEX_DATA4F_M
+                + NV2A_VERTEX_ATTR_DIFFUSE * 4 * sizeof (float), 4);
+            *(float*)(p++) = cur_color[0];
+            *(float*)(p++) = cur_color[1];
+            *(float*)(p++) = cur_color[2];
+            *(float*)(p++) = cur_color[3];
+            /* position */
+            pb_push(p++, NV097_SET_VERTEX4F, 4);
+            *(float*)(p++) = *(verts++);
+            *(float*)(p++) = *(verts++);
+            *(float*)(p++) = 0.f;
+            *(float*)(p++) = 1.f;
+        pb_end(p);
     }
 
+    p = pb_begin();
     p = pb_push1(p, NV097_SET_BEGIN_END, NV097_SET_BEGIN_END_OP_END);
-
     pb_end(p);
 }
 
@@ -1008,12 +1047,6 @@ XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
     data->fb_color_pitch = pb_back_buffer_pitch();
     data->fb_color_fmt = NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8;
     data->fb_depth_fmt = NV097_SET_SURFACE_FORMAT_ZETA_Z24S8;
-    
-    /* FIX: Initialize depth buffer pitch based on the actual back buffer pitch
-     * The depth buffer uses Z24S8 format which is 4 bytes per pixel, 
-     * so the pitch should match the color buffer pitch for most cases.
-     * PBKit may align this differently, so we use the actual pitch from PBKit.
-     */
     data->fb_depth_pitch = pb_back_buffer_pitch();
 
     if (flags & SDL_RENDERER_PRESENTVSYNC) {
