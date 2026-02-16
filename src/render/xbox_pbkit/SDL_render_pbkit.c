@@ -33,6 +33,7 @@
 #include <pbkit/pbkit.h>
 #include <windows.h>
 #include <x86intrin.h>
+#include <xboxkrnl/xboxkrnl.h>   /* Added for DbgPrint */
 
 #define PB_MAXRAM 0x03FFAFFF
 #define PB_MAXZ 16777215.f
@@ -99,6 +100,7 @@ typedef struct
 static inline void
 MatrixViewport(float *out, float x, float y, float width, float height)
 {
+    DbgPrint("MatrixViewport: out=0x%p, x=%f, y=%f, width=%f, height=%f\n", out, x, y, width, height);
     SDL_memset(out, 0, 4 * 4 * sizeof (float));
     out[ 0] = width / 2.0f;
     out[ 5] = height / -2.0f;
@@ -113,6 +115,7 @@ MatrixViewport(float *out, float x, float y, float width, float height)
 static inline void
 MatrixOrtho(float *out, float width, float height)
 {
+    DbgPrint("MatrixOrtho: out=0x%p, width=%f, height=%f\n", out, width, height);
     SDL_memset(out, 0, 4 * 4 * sizeof (float));
     out[ 0] = 2.0f / width;
     out[ 5] = -2.0f / height;
@@ -126,6 +129,7 @@ MatrixOrtho(float *out, float width, float height)
 static inline void
 MatrixMultiply(float *restrict out, const float *a, const float *b)
 {
+    DbgPrint("MatrixMultiply: out=0x%p, a=0x%p, b=0x%p\n", out, a, b);
     for (int i = 0; i < 16; i += 4) {
         for (int j = 0; j < 4; j++) {
             out[i + j] =
@@ -140,43 +144,61 @@ MatrixMultiply(float *restrict out, const float *a, const float *b)
 static inline unsigned int
 PixelFormatToNVTexFormat(const Uint32 format)
 {
+    unsigned int ret = 0;
     switch (format) {
     case SDL_PIXELFORMAT_RGB565:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_R5G6B5;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_R5G6B5;
+        break;
     case SDL_PIXELFORMAT_ARGB1555:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A1R5G5B5;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A1R5G5B5;
+        break;
     case SDL_PIXELFORMAT_ARGB4444:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A4R4G4B4;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A4R4G4B4;
+        break;
     case SDL_PIXELFORMAT_RGBA8888:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_R8G8B8A8;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_R8G8B8A8;
+        break;
     case SDL_PIXELFORMAT_ABGR8888:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A8B8G8R8;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A8B8G8R8;
+        break;
     case SDL_PIXELFORMAT_BGRA8888:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_B8G8R8A8;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_B8G8R8A8;
+        break;
     case SDL_PIXELFORMAT_ARGB8888:
-        return NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A8R8G8B8;
+        ret = NV097_SET_TEXTURE_FORMAT_COLOR_LU_IMAGE_A8R8G8B8;
+        break;
     default:
-        return 0;
+        ret = 0;
+        break;
     }
+    DbgPrint("PixelFormatToNVTexFormat: format=0x%08x -> 0x%08x\n", format, ret);
+    return ret;
 }
 
 static inline unsigned int
 PixelFormatToNVSurfFormat(const Uint32 format)
 {
+    unsigned int ret = 0;
     switch (format) {
     case SDL_PIXELFORMAT_RGB565:
-        return NV097_SET_SURFACE_FORMAT_COLOR_LE_R5G6B5;
+        ret = NV097_SET_SURFACE_FORMAT_COLOR_LE_R5G6B5;
+        break;
     case SDL_PIXELFORMAT_ARGB8888:
-        return NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8;
+        ret = NV097_SET_SURFACE_FORMAT_COLOR_LE_A8R8G8B8;
+        break;
     default:
-        return 0; /* TODO: can we support more? */
+        ret = 0; /* TODO: can we support more? */
+        break;
     }
+    DbgPrint("PixelFormatToNVSurfFormat: format=0x%08x -> 0x%08x\n", format, ret);
+    return ret;
 }
 
 /* Slightly gutted SDL_memcpySSE */
 static void
 FastTextureUpdate(XBOX_PB_TextureData * xtex, const Uint8 * src)
 {
+    DbgPrint("FastTextureUpdate: xtex=0x%p, src=0x%p, size=%u\n", xtex, src, xtex->size);
     int i;
     Uint8 *dst = xtex->data;
     __m128 values[4];
@@ -198,6 +220,7 @@ FastTextureUpdate(XBOX_PB_TextureData * xtex, const Uint8 * src)
 static void
 SetBlendMode(XBOX_PB_RenderData *data, int blendmode)
 {
+    DbgPrint("SetBlendMode: data=0x%p, blendmode=%d (current=%d)\n", data, blendmode, data->cur_blendmode);
     if (blendmode != data->cur_blendmode) {
         Uint32 *p = pb_begin();
 
@@ -233,6 +256,7 @@ SetBlendMode(XBOX_PB_RenderData *data, int blendmode)
 static inline void
 SetCombinerColor(void)
 {
+    DbgPrint("SetCombinerColor\n");
     Uint32 *p = pb_begin();
     #include "ps_color.inl"
     pb_end(p);
@@ -241,6 +265,7 @@ SetCombinerColor(void)
 static inline void
 SetCombinerTexture(void)
 {
+    DbgPrint("SetCombinerTexture\n");
     Uint32 *p = pb_begin();
     #include "ps_texture.inl"
     pb_end(p);
@@ -249,9 +274,12 @@ SetCombinerTexture(void)
 static inline void
 SetTexture(XBOX_PB_RenderData *data, SDL_Texture *texture)
 {
+    DbgPrint("SetTexture: data=0x%p, texture=0x%p (current=0x%p)\n", data, texture, data->cur_texture);
     if (texture != data->cur_texture) {
         if (texture) {
             XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
+            DbgPrint("  texture data: addr=0x%08x, fmt=0x%08x, pitch=%u, w=%u, h=%u, filter=0x%08x\n",
+                     xtex->addr, xtex->tex_format, xtex->pitch, xtex->width, xtex->height, xtex->filter);
             Uint32 *p = pb_begin();
             p = pb_push1(p, NV20_TCL_PRIMITIVE_3D_TX_ENABLE(0), 0x40000000); /* enable tex0 */
             p = pb_push2(p, NV20_TCL_PRIMITIVE_3D_TX_OFFSET(0), xtex->addr, xtex->tex_format);
@@ -261,6 +289,7 @@ SetTexture(XBOX_PB_RenderData *data, SDL_Texture *texture)
             pb_end(p);
             SetCombinerTexture();
         } else {
+            DbgPrint("  disabling texture\n");
             Uint32 *p = pb_begin();
             p = pb_push1(p, NV20_TCL_PRIMITIVE_3D_TX_ENABLE(0), 0x0003FFC0); /* disable tex0 */
             pb_end(p);
@@ -273,6 +302,7 @@ SetTexture(XBOX_PB_RenderData *data, SDL_Texture *texture)
 static inline void
 SetViewport(XBOX_PB_RenderData *data, const SDL_Rect vrect)
 {
+    DbgPrint("SetViewport: data=0x%p, vrect={x=%d, y=%d, w=%d, h=%d}\n", data, vrect.x, vrect.y, vrect.w, vrect.h);
     float mview[16], mortho[16], mproj[16];
     if (SDL_memcmp(&data->cur_viewport, &vrect, sizeof (SDL_Rect)) != 0) {
         /* construct viewport matrix */
@@ -292,17 +322,20 @@ SetViewport(XBOX_PB_RenderData *data, const SDL_Rect vrect)
 static inline void
 SetClipRect(XBOX_PB_RenderData *data, const SDL_bool enabled, SDL_Rect crect)
 {
+    DbgPrint("SetClipRect: data=0x%p, enabled=%d, crect={x=%d, y=%d, w=%d, h=%d}\n", data, enabled, crect.x, crect.y, crect.w, crect.h);
     if (!enabled) {
         /* clipping disabled -> cliprect == viewrect */
         crect.x = 0;
         crect.y = 0;
         crect.w = data->cur_viewport.w;
         crect.h = data->cur_viewport.h;
+        DbgPrint("  clipping disabled, using viewport rect: {%d,%d,%d,%d}\n", crect.x, crect.y, crect.w, crect.h);
     }
     if (SDL_memcmp(&data->cur_cliprect, &crect, sizeof (SDL_Rect)) != 0) {
         /* crect is specified relative to the viewport */
         const Uint32 x = data->cur_viewport.x + crect.x;
         const Uint32 y = data->cur_viewport.y + crect.y;
+        DbgPrint("  setting clip: x=%u, y=%u, w=%u, h=%u\n", x, y, crect.w, crect.h);
         Uint32 *p = pb_begin();
         p = pb_push1(p, NV097_SET_SURFACE_CLIP_HORIZONTAL, (crect.w << 16) + x);
         p = pb_push1(p, NV097_SET_SURFACE_CLIP_VERTICAL, (crect.h << 16) + y);
@@ -314,6 +347,7 @@ SetClipRect(XBOX_PB_RenderData *data, const SDL_bool enabled, SDL_Rect crect)
 static inline void
 InitGPUState(void)
 {
+    DbgPrint("InitGPUState\n");
     Uint32 *p = pb_begin();
 
     /* set fixed pipeline mode */
@@ -366,6 +400,7 @@ InitGPUState(void)
 static inline void
 StartDrawing(XBOX_PB_RenderData *data)
 {
+    DbgPrint("StartDrawing: data=0x%p, rendering=%d\n", data, data->rendering);
     if (!data->rendering) {
         pb_reset();
         if (!data->target)
@@ -373,27 +408,33 @@ StartDrawing(XBOX_PB_RenderData *data)
         pb_erase_depth_stencil_buffer(0, 0, data->fb_width, data->fb_height);
         while (pb_busy());
         data->rendering = SDL_TRUE;
+        DbgPrint("  rendering started\n");
     }
 }
 
 static inline void
 EndDrawing(XBOX_PB_RenderData *data)
 {
+    DbgPrint("EndDrawing: data=0x%p, rendering=%d\n", data, data->rendering);
     if (data->rendering) {
         while (pb_busy());
         while (pb_finished());
         data->rendering = SDL_FALSE; /* rendering has finished */
+        DbgPrint("  rendering finished\n");
     }
 }
 
 static void
 XBOX_PB_WindowEvent(SDL_Renderer *renderer, const SDL_WindowEvent * event)
 {
+    DbgPrint("XBOX_PB_WindowEvent: renderer=0x%p, event=0x%p (type=%d)\n", renderer, event, event->type);
 }
 
 static int
 XBOX_PB_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 {
+    DbgPrint("XBOX_PB_CreateTexture: renderer=0x%p, texture=0x%p (w=%d, h=%d, format=0x%08x, access=%d)\n",
+             renderer, texture, texture->w, texture->h, texture->format, texture->access);
     XBOX_PB_RenderData *xdata = renderer->driverdata;
     XBOX_PB_TextureData *xtex;
     const SDL_bool is_target = (texture->access == SDL_TEXTUREACCESS_TARGET);
@@ -404,6 +445,7 @@ XBOX_PB_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
     if (tex_fmt == 0) {
         /* unsupported format; don't even bother with anything else */
         SDL_SetError("unsupported texture format: 0x%08x", texture->format);
+        DbgPrint("  ERROR: unsupported texture format 0x%08x\n", texture->format);
         return -1;
     }
 
@@ -412,6 +454,7 @@ XBOX_PB_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
         if (surf_fmt == 0) {
             /* can't render into this format */
             SDL_SetError("unsupported rendertarget format: 0x%08x", texture->format);
+            DbgPrint("  ERROR: unsupported rendertarget format 0x%08x\n", texture->format);
             return -1;
         }
     }
@@ -422,6 +465,7 @@ XBOX_PB_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 
     if (!xtex) {
         SDL_OutOfMemory();
+        DbgPrint("  ERROR: SDL_calloc failed\n");
         return -1;
     }
 
@@ -438,6 +482,7 @@ XBOX_PB_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
     if (!xtex->data) {
         SDL_free(xtex);
         SDL_OutOfMemory();
+        DbgPrint("  ERROR: MmAllocateContiguousMemoryEx failed (size=%u, align=%u)\n", xtex->size, align);
         return -1;
     }
 
@@ -458,6 +503,8 @@ XBOX_PB_CreateTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 
     texture->driverdata = xtex;
 
+    DbgPrint("  created texture: data=0x%p, addr=0x%08x, size=%u, pitch=%u\n",
+             xtex->data, xtex->addr, xtex->size, xtex->pitch);
     return 0;
 }
 
@@ -465,6 +512,8 @@ static int
 XBOX_PB_UpdateTexture(SDL_Renderer *renderer, SDL_Texture *texture,
                       const SDL_Rect *rect, const void *pixels, int pitch)
 {
+    DbgPrint("XBOX_PB_UpdateTexture: renderer=0x%p, texture=0x%p, rect={x=%d,y=%d,w=%d,h=%d}, pixels=0x%p, pitch=%d\n",
+             renderer, texture, rect->x, rect->y, rect->w, rect->h, pixels, pitch);
     XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
     const Uint8 *src;
     Uint8 *dst;
@@ -473,12 +522,14 @@ XBOX_PB_UpdateTexture(SDL_Renderer *renderer, SDL_Texture *texture,
 
     /* If it's a whole texture update, just do one big memcpy */
     if (rect->w == xtex->width && rect->h == xtex->height && pitch == xtex->pitch) {
+        DbgPrint("  full texture update\n");
         /* If src is 16 bytes aligned and everything else is 64 bytes aligned, use SSE copy */
         if (((unsigned int)pixels & 15) == 0 && xtex->is_aligned)
             FastTextureUpdate(xtex, pixels);
         else
             SDL_memcpy(xtex->data, pixels, xtex->size);
     } else {
+        DbgPrint("  partial texture update\n");
         src = pixels;
         dst = (Uint8 *) xtex->data +
             rect->y * xtex->pitch +
@@ -498,10 +549,13 @@ static int
 XBOX_PB_LockTexture(SDL_Renderer *renderer, SDL_Texture *texture,
                  const SDL_Rect *rect, void **pixels, int *pitch)
 {
+    DbgPrint("XBOX_PB_LockTexture: renderer=0x%p, texture=0x%p, rect={x=%d,y=%d,w=%d,h=%d}\n",
+             renderer, texture, rect->x, rect->y, rect->w, rect->h);
     XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
 
     if (!xtex->data) {
         SDL_SetError("texture with NULL data");
+        DbgPrint("  ERROR: texture data is NULL\n");
         return -1;
     }
 
@@ -510,18 +564,21 @@ XBOX_PB_LockTexture(SDL_Renderer *renderer, SDL_Texture *texture,
 
     *pitch = xtex->pitch;
 
+    DbgPrint("  locked: pixels=0x%p, pitch=%d\n", *pixels, *pitch);
     return 0;
 }
 
 static void
 XBOX_PB_UnlockTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 {
+    DbgPrint("XBOX_PB_UnlockTexture: renderer=0x%p, texture=0x%p\n", renderer, texture);
     /* No need to update anything, client was writing to texture data */
 }
 
 static int
 XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
 {
+    DbgPrint("XBOX_PB_SetRenderTarget: renderer=0x%p, texture=0x%p\n", renderer, texture);
     Uint32 *p;
     Uint32 dma, addr, cpitch, zpitch, width, height, fmt;
     XBOX_PB_RenderData *xdata = renderer->driverdata;
@@ -539,6 +596,7 @@ XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
         fmt = MASK(NV097_SET_SURFACE_FORMAT_COLOR, xdata->fb_color_fmt) |
             MASK(NV097_SET_SURFACE_FORMAT_ZETA, xdata->fb_depth_fmt) |
             MASK(NV097_SET_SURFACE_FORMAT_TYPE, NV097_SET_SURFACE_FORMAT_TYPE_PITCH);
+        DbgPrint("  resetting to back buffer: w=%u, h=%u, pitch=%u, fmt=0x%08x\n", width, height, cpitch, fmt);
     } else {
         XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
         SDL_assert(xtex);
@@ -548,6 +606,8 @@ XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
         width = xtex->width;
         height = xtex->height;
         fmt = xtex->surf_format;
+        DbgPrint("  setting render target to texture: addr=0x%08x, w=%u, h=%u, pitch=%u, fmt=0x%08x\n",
+                 addr, width, height, cpitch, fmt);
     }
 
     zpitch = xdata->fb_depth_pitch;
@@ -578,6 +638,7 @@ XBOX_PB_SetRenderTarget(SDL_Renderer *renderer, SDL_Texture *texture)
 static int
 XBOX_PB_QueueSetViewport(SDL_Renderer *renderer, SDL_RenderCommand *cmd)
 {
+    DbgPrint("XBOX_PB_QueueSetViewport: renderer=0x%p, cmd=0x%p\n", renderer, cmd);
     /* no op */
     return 0;
 }
@@ -585,6 +646,7 @@ XBOX_PB_QueueSetViewport(SDL_Renderer *renderer, SDL_RenderCommand *cmd)
 static int
 XBOX_PB_QueueSetDrawColor(SDL_Renderer *renderer, SDL_RenderCommand *cmd)
 {
+    DbgPrint("XBOX_PB_QueueSetDrawColor: renderer=0x%p, cmd=0x%p\n", renderer, cmd);
     /* no op */
     return 0;
 }
@@ -592,10 +654,12 @@ XBOX_PB_QueueSetDrawColor(SDL_Renderer *renderer, SDL_RenderCommand *cmd)
 static int
 XBOX_PB_QueueDrawPoints(SDL_Renderer *renderer, SDL_RenderCommand *cmd, const SDL_FPoint * points, int count)
 {
+    DbgPrint("XBOX_PB_QueueDrawPoints: renderer=0x%p, cmd=0x%p, points=0x%p, count=%d\n", renderer, cmd, points, count);
     float *verts = (float *) SDL_AllocateRenderVertices(renderer, count * 2 * sizeof (float), 0, &cmd->data.draw.first);
     int i;
 
     if (!verts) {
+        DbgPrint("  ERROR: SDL_AllocateRenderVertices failed\n");
         return -1;
     }
 
@@ -604,17 +668,19 @@ XBOX_PB_QueueDrawPoints(SDL_Renderer *renderer, SDL_RenderCommand *cmd, const SD
         *(verts++) = 0.5f + points[i].x;
         *(verts++) = 0.5f + points[i].y;
     }
-
+    DbgPrint("  allocated vertices at offset %d\n", cmd->data.draw.first);
     return 0;
 }
 
 static int
 XBOX_PB_QueueFillRects(SDL_Renderer *renderer, SDL_RenderCommand *cmd, const SDL_FRect * rects, int count)
 {
+    DbgPrint("XBOX_PB_QueueFillRects: renderer=0x%p, cmd=0x%p, rects=0x%p, count=%d\n", renderer, cmd, rects, count);
     float *verts = (float *) SDL_AllocateRenderVertices(renderer, count * 8 * sizeof (float), 0, &cmd->data.draw.first);
     int i;
 
     if (!verts) {
+        DbgPrint("  ERROR: SDL_AllocateRenderVertices failed\n");
         return -1;
     }
 
@@ -639,7 +705,7 @@ XBOX_PB_QueueFillRects(SDL_Renderer *renderer, SDL_RenderCommand *cmd, const SDL
         *(verts++) = maxx;
         *(verts++) = miny;
     }
-
+    DbgPrint("  allocated vertices at offset %d\n", cmd->data.draw.first);
     return 0;
 }
 
@@ -647,12 +713,16 @@ static int
 XBOX_PB_QueueCopy(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture *texture,
              const SDL_Rect * srcrect, const SDL_FRect * dstrect)
 {
+    DbgPrint("XBOX_PB_QueueCopy: renderer=0x%p, cmd=0x%p, texture=0x%p, srcrect={%d,%d,%d,%d}, dstrect={%f,%f,%f,%f}\n",
+             renderer, cmd, texture, srcrect->x, srcrect->y, srcrect->w, srcrect->h,
+             dstrect->x, dstrect->y, dstrect->w, dstrect->h);
     XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
     float minx, miny, maxx, maxy;
     float minu, maxu, minv, maxv;
     float *verts = (float *) SDL_AllocateRenderVertices(renderer, 16 * sizeof (float), 0, &cmd->data.draw.first);
 
     if (!verts) {
+        DbgPrint("  ERROR: SDL_AllocateRenderVertices failed\n");
         return -1;
     }
 
@@ -690,6 +760,7 @@ XBOX_PB_QueueCopy(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture *t
     *(verts++) = maxx;
     *(verts++) = miny;
 
+    DbgPrint("  allocated vertices at offset %d\n", cmd->data.draw.first);
     return 0;
 }
 
@@ -698,6 +769,9 @@ XBOX_PB_QueueCopyEx(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture 
                const SDL_Rect * srcrect, const SDL_FRect * dstrect,
                const double angle, const SDL_FPoint *center, const SDL_RendererFlip flip)
 {
+    DbgPrint("XBOX_PB_QueueCopyEx: renderer=0x%p, cmd=0x%p, texture=0x%p, srcrect={%d,%d,%d,%d}, dstrect={%f,%f,%f,%f}, angle=%f, center={%f,%f}, flip=%d\n",
+             renderer, cmd, texture, srcrect->x, srcrect->y, srcrect->w, srcrect->h,
+             dstrect->x, dstrect->y, dstrect->w, dstrect->h, angle, center->x, center->y, flip);
     XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
     float *verts = (float *) SDL_AllocateRenderVertices(renderer, 16 * sizeof (float), 0, &cmd->data.draw.first);
     const float centerx = center->x;
@@ -715,6 +789,7 @@ XBOX_PB_QueueCopyEx(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture 
     float v1 = srcrect->y + srcrect->h;
 
     if (!verts) {
+        DbgPrint("  ERROR: SDL_AllocateRenderVertices failed\n");
         return -1;
     }
 
@@ -763,11 +838,14 @@ XBOX_PB_QueueCopyEx(SDL_Renderer *renderer, SDL_RenderCommand *cmd, SDL_Texture 
     *(verts++) = x + cw + sh;
     *(verts++) = y + sw - ch;
 
+    DbgPrint("  allocated vertices at offset %d\n", cmd->data.draw.first);
     return 0;
 }
 
 static inline void
 DrawObjectsFlat(const Uint32 type, const float *verts, const size_t count, const float *cur_color) {
+    DbgPrint("DrawObjectsFlat: type=0x%08x, verts=0x%p, count=%zu, color={%f,%f,%f,%f}\n",
+             type, verts, count, cur_color[0], cur_color[1], cur_color[2], cur_color[3]);
     Uint32 *p = pb_begin();
     p = pb_push1(p, NV097_SET_BEGIN_END, type);
     pb_end(p);
@@ -797,6 +875,8 @@ DrawObjectsFlat(const Uint32 type, const float *verts, const size_t count, const
 
 static inline void
 DrawObjectsTextured(const Uint32 type, const float *verts, const size_t count, const float *cur_color) {
+    DbgPrint("DrawObjectsTextured: type=0x%08x, verts=0x%p, count=%zu, color={%f,%f,%f,%f}\n",
+             type, verts, count, cur_color[0], cur_color[1], cur_color[2], cur_color[3]);
     Uint32 *p = pb_begin();
     p = pb_push1(p, NV097_SET_BEGIN_END, type);
     pb_end(p);
@@ -832,6 +912,8 @@ DrawObjectsTextured(const Uint32 type, const float *verts, const size_t count, c
 static int
 XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *vertices, size_t vertsize)
 {
+    DbgPrint("XBOX_PB_RunCommandQueue: renderer=0x%p, cmd=0x%p, vertices=0x%p, vertsize=%zu\n",
+             renderer, cmd, vertices, vertsize);
     XBOX_PB_RenderData *data = (XBOX_PB_RenderData *) renderer->driverdata;
     size_t i;
 
@@ -841,6 +923,7 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
     Uint32 *p;
 
     while (cmd) {
+        DbgPrint("  cmd: type=%d, next=0x%p\n", cmd->command, cmd->next);
         switch (cmd->command) {
             case SDL_RENDERCMD_SETDRAWCOLOR: {
                 const Uint8 r = cmd->data.color.r;
@@ -848,6 +931,7 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
                 const Uint8 b = cmd->data.color.b;
                 const Uint8 a = cmd->data.color.a;
                 const Uint32 color = ((a << 24) | (r << 16) | (g << 8) | b);
+                DbgPrint("    SETDRAWCOLOR: r=%u, g=%u, b=%u, a=%u, color=0x%08x\n", r, g, b, a, color);
                 if (color != data->cur_color_word) {
                     data->cur_color[0] = cmd->data.color.r / 255.f;
                     data->cur_color[1] = cmd->data.color.g / 255.f;
@@ -859,11 +943,18 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
             }
 
             case SDL_RENDERCMD_SETVIEWPORT: {
+                DbgPrint("    SETVIEWPORT: rect={%d,%d,%d,%d}\n",
+                         cmd->data.viewport.rect.x, cmd->data.viewport.rect.y,
+                         cmd->data.viewport.rect.w, cmd->data.viewport.rect.h);
                 SetViewport(data, cmd->data.viewport.rect);
                 break;
             }
 
             case SDL_RENDERCMD_SETCLIPRECT: {
+                DbgPrint("    SETCLIPRECT: enabled=%d, rect={%d,%d,%d,%d}\n",
+                         cmd->data.cliprect.enabled,
+                         cmd->data.cliprect.rect.x, cmd->data.cliprect.rect.y,
+                         cmd->data.cliprect.rect.w, cmd->data.cliprect.rect.h);
                 SetClipRect(data, cmd->data.cliprect.enabled, cmd->data.cliprect.rect);
                 break;
             }
@@ -874,11 +965,15 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
                 const Uint8 b = cmd->data.color.b;
                 const Uint8 a = cmd->data.color.a;
                 const Uint32 color = ((a << 24) | (r << 16) | (g << 8) | b);
+                DbgPrint("    CLEAR: color=0x%08x, target_width=%u, target_height=%u\n",
+                         color, data->target_width, data->target_height);
                 pb_fill(0, 0, data->target_width, data->target_height, color);
                 break;
             }
 
             case SDL_RENDERCMD_DRAW_POINTS: {
+                DbgPrint("    DRAW_POINTS: blend=%d, first=%zu, count=%d\n",
+                         cmd->data.draw.blend, cmd->data.draw.first, cmd->data.draw.count);
                 SetTexture(data, NULL);
                 SetBlendMode(data, cmd->data.draw.blend);
                 DrawObjectsFlat(NV097_SET_BEGIN_END_OP_POINTS,
@@ -888,6 +983,8 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
             }
 
             case SDL_RENDERCMD_DRAW_LINES: {
+                DbgPrint("    DRAW_LINES: blend=%d, first=%zu, count=%d\n",
+                         cmd->data.draw.blend, cmd->data.draw.first, cmd->data.draw.count);
                 SetTexture(data, NULL);
                 SetBlendMode(data, cmd->data.draw.blend);
                 DrawObjectsFlat(NV097_SET_BEGIN_END_OP_LINES,
@@ -897,6 +994,8 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
             }
 
             case SDL_RENDERCMD_FILL_RECTS:  {
+                DbgPrint("    FILL_RECTS: blend=%d, first=%zu, count=%d\n",
+                         cmd->data.draw.blend, cmd->data.draw.first, cmd->data.draw.count);
                 SetTexture(data, NULL);
                 SetBlendMode(data, cmd->data.draw.blend);
                 DrawObjectsFlat(NV097_SET_BEGIN_END_OP_QUADS,
@@ -907,6 +1006,8 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
 
             case SDL_RENDERCMD_COPY_EX:
             case SDL_RENDERCMD_COPY: {
+                DbgPrint("    COPY/COPY_EX: texture=0x%p, blend=%d, first=%zu, count=%d\n",
+                         cmd->data.draw.texture, cmd->data.draw.blend, cmd->data.draw.first, cmd->data.draw.count);
                 const size_t count = cmd->data.draw.count;
                 const float *verts = (const float *) (vtxbuf + cmd->data.draw.first);
                 SetTexture(data, cmd->data.draw.texture);
@@ -917,6 +1018,7 @@ XBOX_PB_RunCommandQueue(SDL_Renderer *renderer, SDL_RenderCommand *cmd, void *ve
             }
 
             case SDL_RENDERCMD_NO_OP:
+                DbgPrint("    NO_OP\n");
                 break;
         }
 
@@ -930,23 +1032,29 @@ static int
 XBOX_PB_RenderReadPixels(SDL_Renderer *renderer, const SDL_Rect * rect,
     Uint32 pixel_format, void * pixels, int pitch)
 {
+    DbgPrint("XBOX_PB_RenderReadPixels: renderer=0x%p, rect={%d,%d,%d,%d}, format=0x%08x, pixels=0x%p, pitch=%d (UNSUPPORTED)\n",
+             renderer, rect->x, rect->y, rect->w, rect->h, pixel_format, pixels, pitch);
     return SDL_Unsupported();
 }
 
 static void
 XBOX_PB_RenderPresent(SDL_Renderer *renderer)
 {
+    DbgPrint("XBOX_PB_RenderPresent: renderer=0x%p\n", renderer);
     XBOX_PB_RenderData *data = (XBOX_PB_RenderData *) renderer->driverdata;
 
     EndDrawing(data);
 
-    if(data->vsync)
+    if(data->vsync) {
+        DbgPrint("  waiting for vblank\n");
         pb_wait_for_vbl();
+    }
 }
 
 static void
 XBOX_PB_DestroyTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 {
+    DbgPrint("XBOX_PB_DestroyTexture: renderer=0x%p, texture=0x%p\n", renderer, texture);
     XBOX_PB_RenderData *renderdata = (XBOX_PB_RenderData *) renderer->driverdata;
     XBOX_PB_TextureData *xtex = (XBOX_PB_TextureData *) texture->driverdata;
 
@@ -957,13 +1065,16 @@ XBOX_PB_DestroyTexture(SDL_Renderer *renderer, SDL_Texture *texture)
         return;
 
     if (renderdata->cur_texture == texture) {
+        DbgPrint("  unbinding current texture\n");
         /* unbind texture and wait until everything is pushed to the GPU */
         SetTexture(renderdata, NULL);
         while (pb_busy());
     }
 
-    if (xtex->data)
+    if (xtex->data) {
+        DbgPrint("  freeing memory at 0x%p\n", xtex->data);
         MmFreeContiguousMemory(xtex->data);
+    }
 
     SDL_free(xtex);
 
@@ -973,6 +1084,7 @@ XBOX_PB_DestroyTexture(SDL_Renderer *renderer, SDL_Texture *texture)
 static void
 XBOX_PB_DestroyRenderer(SDL_Renderer *renderer)
 {
+    DbgPrint("XBOX_PB_DestroyRenderer: renderer=0x%p\n", renderer);
     XBOX_PB_RenderData *data = (XBOX_PB_RenderData *) renderer->driverdata;
     if (data) {
         EndDrawing(data);
@@ -990,6 +1102,7 @@ XBOX_PB_DestroyRenderer(SDL_Renderer *renderer)
 SDL_Renderer *
 XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
 {
+    DbgPrint("XBOX_PB_CreateRenderer: window=0x%p, flags=0x%08x\n", window, flags);
     SDL_Rect vrect;
     SDL_Renderer *renderer;
     XBOX_PB_RenderData *data;
@@ -998,15 +1111,18 @@ XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
     if (!pbkit_initialized) {
         if ((err = pb_init()) != 0) {
             SDL_SetError("pb_init() returned %d", err);
+            DbgPrint("  pb_init failed with %d\n", err);
             return NULL;
         }
         InitGPUState();
         pbkit_initialized = SDL_TRUE;
+        DbgPrint("  pbkit initialized\n");
     }
 
     renderer = (SDL_Renderer *) SDL_calloc(1, sizeof(*renderer));
     if (!renderer) {
         SDL_OutOfMemory();
+        DbgPrint("  ERROR: SDL_calloc for renderer failed\n");
         return NULL;
     }
 
@@ -1014,6 +1130,7 @@ XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
     if (!data) {
         XBOX_PB_DestroyRenderer(renderer);
         SDL_OutOfMemory();
+        DbgPrint("  ERROR: SDL_calloc for data failed\n");
         return NULL;
     }
 
@@ -1049,9 +1166,13 @@ XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
     data->fb_depth_pitch = data->fb_width * 4;
     data->fb_depth_fmt = NV097_SET_SURFACE_FORMAT_ZETA_Z24S8;
 
+    DbgPrint("  framebuffer: width=%u, height=%u, color_pitch=%u, depth_pitch=%u\n",
+             data->fb_width, data->fb_height, data->fb_color_pitch, data->fb_depth_pitch);
+
     if (flags & SDL_RENDERER_PRESENTVSYNC) {
         data->vsync = SDL_TRUE;
         renderer->info.flags |= SDL_RENDERER_PRESENTVSYNC;
+        DbgPrint("  vsync enabled\n");
     }
 
     /* set default viewport and cliprect */
@@ -1062,6 +1183,7 @@ XBOX_PB_CreateRenderer(SDL_Window * window, Uint32 flags)
     /* show screen */
     pb_show_front_screen();
 
+    DbgPrint("  renderer created successfully\n");
     return renderer;
 }
 
@@ -1088,4 +1210,3 @@ SDL_RenderDriver XBOX_PB_RenderDriver = {
 #endif /* SDL_VIDEO_RENDER_XBOX_PBKIT */
 
 /* vi: set ts=4 sw=4 expandtab: */
-
